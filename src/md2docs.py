@@ -1,8 +1,8 @@
 #! /usr/bin/env python3
 
-from os import chdir
 import json
 from functools import cached_property
+from os import chdir
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -65,30 +65,39 @@ class GoogleDocs:
         return build("docs", "v1", credentials=self.creds)
 
     def sync_document(self, file_path: str, document_id: str):
+        # ref: https://developers.google.com/docs/api/reference/rest/v1/documents/create
+        # add support for minimal markdown support
+        #  parse markdown to gdocs format
+        #  use batchUpdate to update the document
+        # this will give more control over document updates + formatting
+        # TODO: better document update than del + insert by ^^^
         document = self.service.documents().get(documentId=document_id).execute()
         endIndex = max([x["endIndex"] for x in document["body"]["content"]])
+        change_requests = []
 
-        delete_request = {
-            "deleteContentRange": {
-                "range": {
-                    "startIndex": 1,
-                    "endIndex": endIndex - 1,
+        if endIndex > 2:
+            change_requests.append(
+                {
+                    "deleteContentRange": {
+                        "range": {"startIndex": 1, "endIndex": endIndex - 1}
+                    }
+                }
+            )
+
+        change_requests.append(
+            {
+                "insertText": {
+                    "text": Path(file_path).read_text(),
+                    "location": {
+                        "index": 1,
+                    },
                 }
             }
-        }
-
-        add_request = {
-            "insertText": {
-                "text": Path(file_path).read_text(),
-                "location": {
-                    "index": 1,
-                },
-            }
-        }
+        )
 
         self.service.documents().batchUpdate(
             documentId=document_id,
-            body={"requests": [delete_request, add_request]},
+            body={"requests": change_requests},
         ).execute()
 
 
