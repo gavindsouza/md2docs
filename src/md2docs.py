@@ -5,6 +5,7 @@ from functools import cached_property
 from os import chdir
 from pathlib import Path
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -72,7 +73,7 @@ class GoogleDocs:
         # this will give more control over document updates + formatting
         # TODO: better document update than del + insert by ^^^
         document = self.service.documents().get(documentId=document_id).execute()
-        endIndex = max([x["endIndex"] for x in document["body"]["content"]])
+        endIndex = max(x["endIndex"] for x in document["body"]["content"])
         change_requests = []
 
         if endIndex > 2:
@@ -132,7 +133,13 @@ def main():
 
         if (not last_synced) or (last_modified > last_synced):
             if not gd.authenticated:
-                gd.authenticate()
+                try:
+                    gd.authenticate()
+                except RefreshError:
+                    print("Token expired. Re-authenticating...")
+                    TOKEN_FILE.unlink()
+                    gd.authenticate()
+
             print(f"Syncing {source} to {target}")
             gd.sync_document(source, target)
             document["last_synced"] = last_modified
